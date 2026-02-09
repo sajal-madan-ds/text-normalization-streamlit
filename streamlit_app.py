@@ -4,15 +4,23 @@ Deploy on Streamlit Cloud to convert numbers to words for TTS (English & Hindi)
 """
 
 import sys
+import importlib.util
 from pathlib import Path
 
-# Ensure the app directory is on path so `num2words_tts` is found (e.g. on Streamlit Cloud)
+# Load num2words_tts from same directory as this app (works on Streamlit Cloud)
 _app_dir = Path(__file__).resolve().parent
-if str(_app_dir) not in sys.path:
-    sys.path.insert(0, str(_app_dir))
+_num2words_path = _app_dir / "num2words_tts.py"
+if _num2words_path.exists():
+    spec = importlib.util.spec_from_file_location("num2words_tts", _num2words_path)
+    _num2words = importlib.util.module_from_spec(spec)
+    sys.modules["num2words_tts"] = _num2words
+    spec.loader.exec_module(_num2words)
+    TTSPreprocessor = _num2words.TTSPreprocessor
+else:
+    # Fallback: assume module is on path
+    from num2words_tts import TTSPreprocessor
 
 import streamlit as st
-from num2words_tts import TTSPreprocessor
 
 # Page configuration
 st.set_page_config(
@@ -73,7 +81,7 @@ with st.sidebar:
     ]
     
     for i, sample in enumerate(sample_texts):
-        if st.button(f"📌 Example {i+1}", key=f"sample_{i}", use_container_width=True):
+        if st.button(f"📌 Example {i+1}", key=f"sample_{i}", width="stretch"):
             st.session_state.input_text = sample
             st.session_state.input_text_area = sample  # Update the text_area key value
             # Clear previous output when loading a new example
@@ -110,7 +118,7 @@ with col1:
     convert_button = st.button(
         "🔄 Convert to Normalized Text",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         help="Click to convert the input text to normalized words"
     )
 
@@ -180,7 +188,7 @@ with col2:
                         "Text": p['text'],
                         "Position": f"{p['start']}-{p['end']}"
                     })
-                st.dataframe(pattern_data, use_container_width=True, hide_index=True)
+                st.dataframe(pattern_data, width="stretch", hide_index=True)
             else:
                 st.info("No patterns detected in the input text.")
         

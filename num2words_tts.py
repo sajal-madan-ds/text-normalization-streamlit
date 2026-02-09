@@ -720,12 +720,10 @@ class Num2WordsConverter:
             else:
                 second = self._tens_ones_en(b)  # 25 → twenty-five
             return f"{first} {second}"
-        # Hindi: 2022 → बीस बाईस; 2001 → बीस शून्य एक
-        first_hi = safe_num2words(a, lang=lang)
-        if b == 0:
-            return first_hi + " सौ"
-        second_hi = safe_num2words(b, lang=lang) if b >= 10 else ("शून्य " + safe_num2words(b, lang=lang))
-        return f"{first_hi} {second_hi}"
+        # Hindi: say year as "do hazar pachis" (दो हज़ार पच्चीस), not "bees pachchees"
+        if lang == 'hi':
+            return HINDI_CONVERTER.convert(year)
+        return safe_num2words(year, lang=lang)
 
     def _convert_email(self, data: Dict, lang: str) -> str:
         """Convert email: convert numbers to words and special chars for TTS."""
