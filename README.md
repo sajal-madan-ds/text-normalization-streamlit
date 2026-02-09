@@ -81,5 +81,16 @@ A web application for converting numbers and numeric patterns in text to words f
 
 ## License
 
-This project is open source and available for use.
+**⚠️ IMPORTANT: Non-Commercial, Non-Public Use Only**
+
+This software is provided for **personal, private, and educational use only**. 
+
+**Restrictions:**
+- ❌ **NOT for commercial use** - Cannot be used in any commercial product or service
+- ❌ **NOT for public use** - Cannot be publicly deployed or distributed without permission
+- ✅ **Personal/Private use only** - For individual learning and private projects
+
+For commercial or public use licensing, please contact the copyright holder.
+
+See [LICENSE](LICENSE) file for full terms and conditions.
 

@@ -206,7 +206,8 @@ This tool can normalize the following patterns:
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #666;'>"
-    "Built with ❤️ using Streamlit | TTS Text Normalization Tool"
+    "Built with ❤️ using Streamlit | TTS Text Normalization Tool<br>"
+    "<small>⚠️ Non-Commercial, Non-Public Use Only | See LICENSE for terms</small>"
     "</div>",
     unsafe_allow_html=True
 )
