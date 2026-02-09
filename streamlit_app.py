@@ -189,7 +189,7 @@ This tool can normalize the following patterns:
 - **Vehicle Numbers**: DL01CA1234
 - **Alphanumeric**: Room 123, Floor 5
 
-**Note**: Email addresses are preserved as-is (numbers inside emails are not converted).
+**Note**: Email addresses are converted with numbers inside converted to words (e.g., sajalmadan09@gmail.com → "sajalmadan zero nine at gmail dot com").
 """)
 
 # Footer

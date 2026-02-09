@@ -28,7 +28,7 @@ class PatternDetector:
             'EMAIL': {
                 'priority': 15,
                 'regex': [
-                    # Whole email: do not convert digits inside (e.g. ajaysagar99@gmail.com)
+                    # Whole email: convert digits inside to words (e.g. sajalmadan09@gmail.com -> sajalmadan zero nine at gmail dot com)
                     r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b',
                 ]
             },
@@ -261,8 +261,18 @@ class PatternNormalizer:
         return result
 
     def _normalize_email(self, text: str) -> Dict[str, Any]:
-        """Pass through email unchanged (no number conversion inside)."""
-        return {'type': 'email', 'text': text.strip()}
+        """Normalize email: extract parts and identify numbers for conversion."""
+        email_text = text.strip()
+        # Split email into local part (before @) and domain part (after @)
+        if '@' in email_text:
+            local_part, domain_part = email_text.split('@', 1)
+            return {
+                'type': 'email',
+                'local_part': local_part,
+                'domain_part': domain_part,
+                'text': email_text
+            }
+        return {'type': 'email', 'text': email_text}
 
     def _normalize_date(self, text: str) -> Dict[str, Any]:
         text = self._devanagari_to_arabic(text)
@@ -655,8 +665,60 @@ class Num2WordsConverter:
         return f"{first_hi} {second_hi}"
 
     def _convert_email(self, data: Dict, lang: str) -> str:
-        """Leave email unchanged for TTS (speak as-is)."""
-        return data.get('text', '')
+        """Convert email: convert numbers to words and special chars for TTS."""
+        if 'local_part' in data and 'domain_part' in data:
+            local_part = data['local_part']
+            domain_part = data['domain_part']
+            
+            # Convert numbers in local part to words (digit-by-digit)
+            # Also convert dots to "dot" for TTS
+            local_converted = self._convert_numbers_in_text(local_part, lang)
+            local_converted = local_converted.replace('.', ' dot ')
+            
+            # Convert numbers in domain part to words (digit-by-digit)
+            # Also convert dots to "dot" for TTS
+            domain_converted = self._convert_numbers_in_text(domain_part, lang)
+            domain_converted = domain_converted.replace('.', ' dot ')
+            
+            # Use "at" instead of "@" for TTS
+            return f"{local_converted} at {domain_converted}"
+        # Fallback: convert numbers and special chars in the whole email string
+        email_text = data.get('text', '')
+        converted = self._convert_numbers_in_text(email_text, lang)
+        converted = converted.replace('@', ' at ')
+        converted = converted.replace('.', ' dot ')
+        # Clean up multiple spaces
+        import re
+        converted = re.sub(r'\s+', ' ', converted).strip()
+        return converted
+    
+    def _convert_numbers_in_text(self, text: str, lang: str) -> str:
+        """Helper: convert all digits in a string to words while preserving other characters."""
+        result = []
+        current_number = ''
+        
+        for char in text:
+            if char.isdigit():
+                current_number += char
+            else:
+                if current_number:
+                    # Convert accumulated number to words (digit by digit for multi-digit numbers)
+                    # For emails, we want digit-by-digit reading: 09 -> "zero nine"
+                    digit_words = []
+                    for digit in current_number:
+                        digit_words.append(safe_num2words(int(digit), lang=lang))
+                    result.append(' '.join(digit_words))
+                    current_number = ''
+                result.append(char)
+        
+        # Handle trailing number
+        if current_number:
+            digit_words = []
+            for digit in current_number:
+                digit_words.append(safe_num2words(int(digit), lang=lang))
+            result.append(' '.join(digit_words))
+        
+        return ''.join(result)
 
     def _convert_date(self, data: Dict, lang: str) -> str:
         if 'day' in data and 'month' in data and 'year' in data:
