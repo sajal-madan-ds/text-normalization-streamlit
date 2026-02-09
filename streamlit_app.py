@@ -68,24 +68,34 @@ with st.sidebar:
     for i, sample in enumerate(sample_texts):
         if st.button(f"📌 Example {i+1}", key=f"sample_{i}", use_container_width=True):
             st.session_state.input_text = sample
+            st.session_state.input_text_area = sample  # Update the text_area key value
             # Clear previous output when loading a new example
             if 'normalized_output' in st.session_state:
                 st.session_state.normalized_output = ''
             if 'detected_patterns' in st.session_state:
                 st.session_state.detected_patterns = []
+            st.rerun()  # Force refresh to update the UI
 
 # Main content area
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📥 Input Text")
+    # Initialize input_text in session state if not present
+    if 'input_text' not in st.session_state:
+        st.session_state.input_text = ''
+    
     input_text = st.text_area(
         "Enter text with numbers to normalize:",
-        value=st.session_state.get('input_text', ''),
+        value=st.session_state.input_text,
         height=200,
         placeholder="Example: The meeting is on 12-11-2026 at 2:30pm. Call me at +91-9876543210",
         key="input_text_area"
     )
+    
+    # Sync the text_area value back to session state (in case user types manually)
+    if input_text != st.session_state.get('input_text', ''):
+        st.session_state.input_text = input_text
     
     # Convert button
     convert_button = st.button(
