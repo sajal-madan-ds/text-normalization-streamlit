@@ -464,19 +464,25 @@ class PatternNormalizer:
             minor = int((amount - major) * 100)
             unit_map = {'dollar': ('dollars', 'cents'), 'rupee': ('rupees', 'paise'), 'euro': ('euros', 'cents'), 'pound': ('pounds', 'pence')}
             currency = unit_map.get(unit.lower().rstrip('s'), ('dollars', 'cents'))
-            return {'type': 'currency', 'amount': amount, 'major': major, 'minor': minor, 'currency': currency}
+            indian_rupee = currency == ('rupees', 'paise')
+            return {'type': 'currency', 'amount': amount, 'major': major, 'minor': minor, 'currency': currency, 'indian_rupee': indian_rupee}
         currency_symbol = None
+        text_lower = text.lower().strip()
         for symbol, names in currency_map.items():
-            if symbol in text.lower():
+            if symbol in text_lower:
                 currency_symbol = names
                 break
+        # Explicitly detect Rs/₹ so we always use lakh/crore (even if symbol order varies)
+        if not currency_symbol and re.search(r'\b(rs\.?|₹|rupees?)\b', text_lower):
+            currency_symbol = ('rupees', 'paise')
         amount_match = re.search(r'[\d,]+(?:\.\d+)?', text)
         if amount_match:
             amount_str = amount_match.group(0).replace(',', '')
             amount = float(amount_str)
             major = int(amount)
             minor = int(round((amount - major) * 100))
-            return {'type': 'currency', 'amount': amount, 'major': major, 'minor': minor, 'currency': currency_symbol or ('dollars', 'cents')}
+            indian_rupee = currency_symbol == ('rupees', 'paise')
+            return {'type': 'currency', 'amount': amount, 'major': major, 'minor': minor, 'currency': currency_symbol or ('dollars', 'cents'), 'indian_rupee': indian_rupee}
         return {'type': 'currency', 'text': text}
 
     def _normalize_percentage(self, text: str) -> Dict[str, Any]:
@@ -913,19 +919,21 @@ class Num2WordsConverter:
         if n == 0:
             return "zero"
         if n < 1000:
-            return safe_num2words(n, lang='en')
+            return self._tens_ones_en(n) if n <= 99 else safe_num2words(n, lang='en')
         if n < 100000:  # 1,000 to 99,999
             thousands = n // 1000
             rest = n % 1000
+            th = self._tens_ones_en(thousands) if thousands <= 99 else safe_num2words(thousands, lang='en')
             if rest == 0:
-                return safe_num2words(thousands, lang='en') + " thousand"
-            return safe_num2words(thousands, lang='en') + " thousand " + self._amount_to_words_indian_en(rest)
+                return th + " thousand"
+            return th + " thousand " + self._amount_to_words_indian_en(rest)
         if n < 10000000:  # 1,00,000 to 99,99,999
             lakhs = n // 100000
             rest = n % 100000
+            lw = self._tens_ones_en(lakhs) if lakhs <= 99 else safe_num2words(lakhs, lang='en')
             if rest == 0:
-                return safe_num2words(lakhs, lang='en') + " lakh"
-            return safe_num2words(lakhs, lang='en') + " lakh " + self._amount_to_words_indian_en(rest)
+                return lw + " lakh"
+            return lw + " lakh " + self._amount_to_words_indian_en(rest)
         crores = n // 10000000
         rest = n % 10000000
         if rest == 0:
@@ -936,8 +944,8 @@ class Num2WordsConverter:
         if 'major' in data and 'currency' in data:
             major, minor = data['major'], data['minor']
             currency_names = data['currency']
-            # Indian Rupees: use lakh/crore in both English and Hindi (Hindi uses HindiNumberConverter which already has lakh/crore)
-            is_rupees = currency_names[0] in ('rupees', 'रुपये')
+            # Indian Rupees: use lakh/crore (never million/thousand for Rs/₹)
+            is_rupees = data.get('indian_rupee', False) or (currency_names[0] in ('rupees', 'रुपये'))
             if is_rupees and lang == 'en':
                 major_words = self._amount_to_words_indian_en(major)
             else:

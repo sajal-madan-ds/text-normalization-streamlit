@@ -22,8 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize preprocessor (cached for performance)
-@st.cache_resource
+# Initialize preprocessor (no cache so Rs→lakh/crore and other fixes always apply after deploy)
 def get_preprocessor(language='en'):
     return TTSPreprocessor(default_language=language)
 
