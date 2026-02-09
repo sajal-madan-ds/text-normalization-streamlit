@@ -39,6 +39,8 @@ class PatternDetector:
                     r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\b',
                     # dd-mm-yy (Indian short year: day-month-year)
                     r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})\b',
+                    # ddMon,yyyy or dd Mon, yyyy (e.g. 13Nov,2025 → year spoken as "twenty twenty-five")
+                    r'(?i)\b(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z.]*\s*,\s*(\d{4})\b',
                     r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
                     r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(st|nd|rd|th)?\s+(\d{4})\b',
                     r'\b(\d{1,2})(st|nd|rd|th)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
@@ -49,8 +51,11 @@ class PatternDetector:
                 'priority': 9,
                 'regex': [
                     r'\b(\d{1,2}):(\d{2})\s*(am|pm|AM|PM)?\b',
-                    r'\b(\d{1,2})\.(\d{2})\s*(am|pm|AM|PM)?\b',
+                    # Do NOT match X.XX when followed by hour/hours (duration, not clock time)
+                    r'\b(\d{1,2})\.(\d{2})\s*(am|pm|AM|PM)?(?!\s*(?:hour|hours|hr|hrs)\b)\b',
                     r'[०-९]{1,2}:[०-९]{2}',
+                    # Hinglish "N baj kar M min" / "N baj kar Mmin" = N o'clock M minutes (match before "N baj" alone)
+                    r'\b(\d{1,2})\s*baj\s+kar\s+(\d{1,2})\s*(?:min|mins|minute|minutes)\b',
                     # Hinglish "N baj" / "Nbaj" = N o'clock (e.g. 5baj = पांच बजे)
                     r'\b(\d{1,2})\s*baj\b',
                 ]
@@ -192,7 +197,8 @@ class PatternDetector:
     def _resolve_overlaps(self, matches: List[Dict]) -> List[Dict]:
         if not matches:
             return []
-        matches.sort(key=lambda x: (x['start'], -x['priority']))
+        # Prefer longer spans when start and priority are equal (e.g. "5 baj kar 30 min" over "5 baj")
+        matches.sort(key=lambda x: (x['start'], -x['priority'], -(x['end'] - x['start'])))
         resolved = []
         occupied_ranges = []
         for match in matches:
@@ -229,6 +235,11 @@ class PatternNormalizer:
             'january': 1, 'february': 2, 'march': 3, 'april': 4,
             'may': 5, 'june': 6, 'july': 7, 'august': 8,
             'september': 9, 'october': 10, 'november': 11, 'december': 12
+        }
+        # Abbreviations for formats like 13Nov,2025
+        self.month_abbrev = {
+            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
         }
 
     def normalize(self, text: str, pattern_type: str) -> Dict[str, Any]:
@@ -303,6 +314,13 @@ class PatternNormalizer:
             month_name, day, suffix, year = match.groups()
             month = self.month_names[month_name.lower()]
             return {'type': 'date', 'day': int(day), 'month': month, 'year': int(year), 'format': 'month_day_ordinal' if suffix else 'month_day'}
+        # ddMon,yyyy e.g. 13Nov,2025 (year spoken as "twenty twenty-five")
+        match = re.match(r'(?i)^(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z.]*\s*,\s*(\d{4})$', text.strip())
+        if match:
+            day, month_abbr, year = match.groups()
+            month = self.month_abbrev.get(month_abbr.lower()[:3])
+            if month is not None:
+                return {'type': 'date', 'day': int(day), 'month': month, 'year': int(year), 'format': 'text'}
         return {'type': 'date', 'text': text}
 
     def _normalize_time(self, text: str) -> Dict[str, Any]:
@@ -316,6 +334,12 @@ class PatternNormalizer:
                 'minute': int(minute),
                 'meridiem': meridiem
             }
+        # Hinglish "5 baj kar 30 min" or "5 baj kar 30min" = 5 o'clock 30 minutes
+        match = re.match(r'(?i)(\d{1,2})\s*baj\s+kar\s+(\d{1,2})\s*(?:min|mins|minute|minutes)', text)
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            return {'type': 'time', 'hour': hour, 'minute': minute, 'meridiem': None, 'baj': True, 'baj_kar': True}
         # Hinglish "5baj" / "5 baj" = 5 o'clock (no default AM/PM)
         match = re.match(r'(\d{1,2})\s*baj', text, re.IGNORECASE)
         if match:
@@ -742,7 +766,7 @@ class Num2WordsConverter:
         if 'hour' in data and 'minute' in data:
             hour, minute = data['hour'], data['minute']
             meridiem = data.get('meridiem')
-            from_baj = data.get('baj', False)  # Hinglish "5baj" - don't add default AM/PM
+            from_baj = data.get('baj', False) or data.get('baj_kar', False)  # Hinglish "5baj" / "5 baj kar 30 min" - don't add default AM/PM
             display_hour = hour
             if not meridiem and not from_baj:
                 if hour == 0:
@@ -847,11 +871,42 @@ class Num2WordsConverter:
         connector = "to" if lang == 'en' else "से"
         return f"{start_words} {connector} {end_words}"
 
+    def _amount_to_words_indian_en(self, n: int) -> str:
+        """Convert amount to English words using Indian scale (lakh, crore) for rupees."""
+        if n < 0:
+            return "minus " + self._amount_to_words_indian_en(-n)
+        if n == 0:
+            return "zero"
+        if n < 1000:
+            return safe_num2words(n, lang='en')
+        if n < 100000:  # 1,000 to 99,999
+            thousands = n // 1000
+            rest = n % 1000
+            if rest == 0:
+                return safe_num2words(thousands, lang='en') + " thousand"
+            return safe_num2words(thousands, lang='en') + " thousand " + self._amount_to_words_indian_en(rest)
+        if n < 10000000:  # 1,00,000 to 99,99,999
+            lakhs = n // 100000
+            rest = n % 100000
+            if rest == 0:
+                return safe_num2words(lakhs, lang='en') + " lakh"
+            return safe_num2words(lakhs, lang='en') + " lakh " + self._amount_to_words_indian_en(rest)
+        crores = n // 10000000
+        rest = n % 10000000
+        if rest == 0:
+            return self._amount_to_words_indian_en(crores) + " crore"
+        return self._amount_to_words_indian_en(crores) + " crore " + self._amount_to_words_indian_en(rest)
+
     def _convert_currency(self, data: Dict, lang: str) -> str:
         if 'major' in data and 'currency' in data:
             major, minor = data['major'], data['minor']
             currency_names = data['currency']
-            major_words = safe_num2words(major, lang=lang)
+            # Indian Rupees: use lakh/crore in both English and Hindi (Hindi uses HindiNumberConverter which already has lakh/crore)
+            is_rupees = currency_names[0] in ('rupees', 'रुपये')
+            if is_rupees and lang == 'en':
+                major_words = self._amount_to_words_indian_en(major)
+            else:
+                major_words = safe_num2words(major, lang=lang)
             if lang == 'hi':
                 currency_unit_map = {'dollars': 'डॉलर', 'rupees': 'रुपये', 'euros': 'यूरो', 'pounds': 'पाउंड'}
                 currency_subunit_map = {'cents': 'सेंट', 'paise': 'पैसे', 'pence': 'पेंस'}
