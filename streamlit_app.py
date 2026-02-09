@@ -3,6 +3,14 @@ TTS Text Normalization App
 Deploy on Streamlit Cloud to convert numbers to words for TTS (English & Hindi)
 """
 
+import sys
+from pathlib import Path
+
+# Ensure the app directory is on path so `num2words_tts` is found (e.g. on Streamlit Cloud)
+_app_dir = Path(__file__).resolve().parent
+if str(_app_dir) not in sys.path:
+    sys.path.insert(0, str(_app_dir))
+
 import streamlit as st
 from num2words_tts import TTSPreprocessor
 
