@@ -68,6 +68,11 @@ with st.sidebar:
     for i, sample in enumerate(sample_texts):
         if st.button(f"📌 Example {i+1}", key=f"sample_{i}", use_container_width=True):
             st.session_state.input_text = sample
+            # Clear previous output when loading a new example
+            if 'normalized_output' in st.session_state:
+                st.session_state.normalized_output = ''
+            if 'detected_patterns' in st.session_state:
+                st.session_state.detected_patterns = []
 
 # Main content area
 col1, col2 = st.columns(2)
@@ -78,13 +83,29 @@ with col1:
         "Enter text with numbers to normalize:",
         value=st.session_state.get('input_text', ''),
         height=200,
-        placeholder="Example: The meeting is on 12-11-2026 at 2:30pm. Call me at +91-9876543210"
+        placeholder="Example: The meeting is on 12-11-2026 at 2:30pm. Call me at +91-9876543210",
+        key="input_text_area"
+    )
+    
+    # Convert button
+    convert_button = st.button(
+        "🔄 Convert to Normalized Text",
+        type="primary",
+        use_container_width=True,
+        help="Click to convert the input text to normalized words"
     )
 
 with col2:
     st.subheader("📤 Normalized Output")
     
-    if input_text.strip():
+    # Initialize session state for output
+    if 'normalized_output' not in st.session_state:
+        st.session_state.normalized_output = ''
+    if 'detected_patterns' not in st.session_state:
+        st.session_state.detected_patterns = []
+    
+    # Process text only when button is clicked
+    if convert_button and input_text.strip():
         # Map language mode to code
         lang_map = {
             "English": "en",
@@ -99,41 +120,54 @@ with col2:
         # Process text
         try:
             normalized_output = preprocessor.preprocess(input_text, language=lang_code)
+            st.session_state.normalized_output = normalized_output
             
-            # Display output
-            st.text_area(
-                "Normalized text:",
-                value=normalized_output,
-                height=200,
-                key="output",
-                disabled=False
-            )
-            
-            # Show detected patterns if enabled
+            # Get detected patterns if enabled
             if show_patterns:
                 patterns = preprocessor.get_detected_patterns(input_text)
-                if patterns:
-                    st.markdown("**Detected Patterns:**")
-                    pattern_data = []
-                    for p in patterns:
-                        pattern_data.append({
-                            "Type": p['type'],
-                            "Text": p['text'],
-                            "Position": f"{p['start']}-{p['end']}"
-                        })
-                    st.dataframe(pattern_data, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No patterns detected in the input text.")
-            
-            # Copy functionality (using st.code for easy selection)
-            st.markdown("**💡 Tip:** Select the text above and copy it manually, or use the code block below:")
-            st.code(normalized_output, language=None)
+                st.session_state.detected_patterns = patterns
+            else:
+                st.session_state.detected_patterns = []
             
         except Exception as e:
             st.error(f"Error processing text: {str(e)}")
             st.exception(e)
+            st.session_state.normalized_output = ''
+            st.session_state.detected_patterns = []
+    
+    # Display output if available
+    if st.session_state.normalized_output:
+        st.text_area(
+            "Normalized text:",
+            value=st.session_state.normalized_output,
+            height=200,
+            key="output",
+            disabled=False
+        )
+        
+        # Show detected patterns if enabled and available
+        if show_patterns and st.session_state.detected_patterns:
+            patterns = st.session_state.detected_patterns
+            if patterns:
+                st.markdown("**Detected Patterns:**")
+                pattern_data = []
+                for p in patterns:
+                    pattern_data.append({
+                        "Type": p['type'],
+                        "Text": p['text'],
+                        "Position": f"{p['start']}-{p['end']}"
+                    })
+                st.dataframe(pattern_data, use_container_width=True, hide_index=True)
+            else:
+                st.info("No patterns detected in the input text.")
+        
+        # Copy functionality (using st.code for easy selection)
+        st.markdown("**💡 Tip:** Select the text above and copy it manually, or use the code block below:")
+        st.code(st.session_state.normalized_output, language=None)
+    elif not input_text.strip():
+        st.info("👈 Enter text in the input box and click 'Convert' to see the normalized output here.")
     else:
-        st.info("👈 Enter text in the input box to see the normalized output here.")
+        st.info("👆 Click the 'Convert to Normalized Text' button to process your input.")
 
 # Additional information
 st.markdown("---")
