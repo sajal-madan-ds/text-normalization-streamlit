@@ -35,16 +35,23 @@ class PatternDetector:
             'DATE': {
                 'priority': 10,
                 'regex': [
+                    # ddMon,yyyy first so it wins over NUMBER matching "2025" (e.g. 13Nov,2025)
+                    r'(?i)\b(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z.]*\s*,\s*(\d{4})\b',
                     # dd-mm-yyyy or dd/mm/yyyy
                     r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\b',
                     # dd-mm-yy (Indian short year: day-month-year)
                     r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})\b',
-                    # ddMon,yyyy or dd Mon, yyyy (e.g. 13Nov,2025 → year spoken as "twenty twenty-five")
-                    r'(?i)\b(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z.]*\s*,\s*(\d{4})\b',
                     r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
                     r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(st|nd|rd|th)?\s+(\d{4})\b',
                     r'\b(\d{1,2})(st|nd|rd|th)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
                     r'[०-९]{1,2}[/-][०-९]{1,2}[/-][०-९]{4}',
+                ]
+            },
+            'DURATION': {
+                # Match "X.XX hours" / "1.30 hours" so it's NOT treated as clock time (no AM/PM)
+                'priority': 10,
+                'regex': [
+                    r'\b\d+(?:\.\d+)?\s*(?:hour|hours|hr|hrs)\b',
                 ]
             },
             'TIME': {
@@ -216,6 +223,15 @@ class PatternDetector:
     def detect_language(self, text: str) -> str:
         if re.search(r'[\u0900-\u097F]', text):
             return 'hi'
+        # Hinglish (Roman script Hindi): common words so time/money output in Hindi
+        text_lower = text.lower()
+        hinglish_markers = [
+            'maine', 'ko', 'par', 'rupaye', 'paise', 'pay', 'kiye', 'kiya',
+            'hai', 'baj', 'num', 'ki', 'ka', 'ke', 'me', 'ne', 'se', 'liye', 'bhut',
+            'ye', 'mera', 'apna', 'kya', 'bahut'
+        ]
+        if any(w in text_lower for w in hinglish_markers):
+            return 'hi'
         return 'en'
 
 
@@ -254,6 +270,7 @@ class PatternNormalizer:
             'PERCENTAGE': self._normalize_percentage,
             'RATIO': self._normalize_ratio,
             'RANGE': self._normalize_range,
+            'DURATION': self._normalize_measurement,
             'MEASUREMENT': self._normalize_measurement,
             'ALPHANUMERIC': self._normalize_alphanumeric,
             'VEHICLE': self._normalize_vehicle,
@@ -654,6 +671,7 @@ class Num2WordsConverter:
             'PERCENTAGE': self._convert_percentage,
             'RATIO': self._convert_ratio,
             'RANGE': self._convert_range,
+            'DURATION': self._convert_measurement,
             'MEASUREMENT': self._convert_measurement,
             'ALPHANUMERIC': self._convert_alphanumeric,
             'VEHICLE': self._convert_vehicle,
@@ -665,6 +683,20 @@ class Num2WordsConverter:
         converter_func = converter_map.get(pattern_type, self._convert_number)
         return converter_func(normalized_data, lang)
 
+    def _tens_ones_en(self, n: int) -> str:
+        """English words for 1-99 without num2words (for year phrasing)."""
+        if n < 0 or n > 99:
+            return safe_num2words(n, lang='en')
+        ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+        teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+        tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
+        if n < 10:
+            return ones[n]
+        if n < 20:
+            return teens[n - 10]
+        t, o = divmod(n, 10)
+        return tens[t] + ('-' + ones[o] if o else '')
+
     def _year_to_words(self, year: int, lang: str) -> str:
         """Speak 4-digit year naturally: 2022 → 'twenty twenty-two' (not 'two thousand and twenty-two')."""
         if year < 1000 or year > 9999:
@@ -673,13 +705,14 @@ class Num2WordsConverter:
         if lang == 'en':
             if year == 2000:
                 return "two thousand"
-            first = safe_num2words(a, lang=lang)  # 20 → twenty
+            # Use inline English for 20-99 so year is always "twenty twenty-five" even without num2words
+            first = self._tens_ones_en(a)  # 20 → twenty
             if b == 0:
                 return first + " hundred"
             if b < 10:
-                second = "oh " + safe_num2words(b, lang=lang)  # 01 → oh one
+                second = "oh " + self._tens_ones_en(b)
             else:
-                second = safe_num2words(b, lang=lang)  # 22 → twenty-two
+                second = self._tens_ones_en(b)  # 25 → twenty-five
             return f"{first} {second}"
         # Hindi: 2022 → बीस बाईस; 2001 → बीस शून्य एक
         first_hi = safe_num2words(a, lang=lang)
@@ -753,6 +786,8 @@ class Num2WordsConverter:
                 day_words = safe_num2words(day, lang=lang, to='ordinal')
             elif use_ordinal and lang == 'hi':
                 day_words = safe_num2words(day, lang=lang) + " वां"
+            elif lang == 'en' and 1 <= day <= 31:
+                day_words = self._tens_ones_en(day)  # e.g. 13 → thirteen (no num2words needed)
             else:
                 day_words = safe_num2words(day, lang=lang)
             year_words = self._year_to_words(year, lang)
