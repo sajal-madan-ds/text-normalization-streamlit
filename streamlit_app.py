@@ -72,6 +72,8 @@ with st.sidebar:
             # Clear previous output when loading a new example
             if 'normalized_output' in st.session_state:
                 st.session_state.normalized_output = ''
+            if 'output' in st.session_state:
+                st.session_state["output"] = ''
             if 'detected_patterns' in st.session_state:
                 st.session_state.detected_patterns = []
             st.rerun()  # Force refresh to update the UI
@@ -131,6 +133,7 @@ with col2:
         try:
             normalized_output = preprocessor.preprocess(input_text, language=lang_code)
             st.session_state.normalized_output = normalized_output
+            st.session_state["output"] = normalized_output  # Sync so output text_area (key="output") updates
             
             # Get detected patterns if enabled
             if show_patterns:
@@ -143,10 +146,13 @@ with col2:
             st.error(f"Error processing text: {str(e)}")
             st.exception(e)
             st.session_state.normalized_output = ''
+            st.session_state["output"] = ''
             st.session_state.detected_patterns = []
     
     # Display output if available
     if st.session_state.normalized_output:
+        # Sync session_state["output"] so the text_area (key="output") shows latest normalized result
+        st.session_state["output"] = st.session_state.normalized_output
         st.text_area(
             "Normalized text:",
             value=st.session_state.normalized_output,
