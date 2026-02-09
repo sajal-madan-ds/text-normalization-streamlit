@@ -223,14 +223,14 @@ class PatternDetector:
     def detect_language(self, text: str) -> str:
         if re.search(r'[\u0900-\u097F]', text):
             return 'hi'
-        # Hinglish (Roman script Hindi): common words so time/money output in Hindi
-        text_lower = text.lower()
-        hinglish_markers = [
+        # Hinglish (Roman script Hindi): common words so time/money output in Hindi (whole-word match only)
+        words_lower = set(re.findall(r'\b[a-z\u0900-\u097f]+\b', text.lower()))
+        hinglish_markers = {
             'maine', 'ko', 'par', 'rupaye', 'paise', 'pay', 'kiye', 'kiya',
             'hai', 'baj', 'num', 'ki', 'ka', 'ke', 'me', 'ne', 'se', 'liye', 'bhut',
             'ye', 'mera', 'apna', 'kya', 'bahut'
-        ]
-        if any(w in text_lower for w in hinglish_markers):
+        }
+        if words_lower & hinglish_markers:
             return 'hi'
         return 'en'
 
@@ -703,6 +703,26 @@ class Num2WordsConverter:
         t, o = divmod(n, 10)
         return tens[t] + (' ' + ones[o] if o else '')
 
+    def _ordinal_en(self, n: int) -> str:
+        """English ordinal words (first, second, ...) without num2words."""
+        ordinals_1_31 = [
+            'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+            'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth',
+            'twenty first', 'twenty second', 'twenty third', 'twenty fourth', 'twenty fifth', 'twenty sixth', 'twenty seventh', 'twenty eighth', 'twenty ninth', 'thirtieth', 'thirty first'
+        ]
+        if 1 <= n <= 31:
+            return ordinals_1_31[n - 1]
+        if n < 100:
+            card = self._tens_ones_en(n)
+            if n % 10 == 1 and n != 11:
+                return (card + ' first').strip() if card else 'first'
+            if n % 10 == 2 and n != 12:
+                return (card + ' second').strip() if card else 'second'
+            if n % 10 == 3 and n != 13:
+                return (card + ' third').strip() if card else 'third'
+            return (card + 'th').strip() if card else str(n)
+        return safe_num2words(n, lang='en', to='ordinal')
+
     def _year_to_words(self, year: int, lang: str) -> str:
         """Speak 4-digit year naturally: 2022 → 'twenty twenty-two' (not 'two thousand and twenty-two')."""
         if year < 1000 or year > 9999:
@@ -1090,7 +1110,7 @@ class Num2WordsConverter:
         if 'value' in data:
             value = data['value']
             if lang == 'en':
-                return safe_num2words(value, to='ordinal', lang=lang)
+                return self._ordinal_en(value)
             cardinal = safe_num2words(value, lang=lang)
             return f"{cardinal} वां"
         return data.get('text', '')
@@ -1123,6 +1143,9 @@ class TTSPreprocessor:
         lang = language or self.default_language
         if lang == 'auto':
             lang = self.detector.detect_language(text)
+        # If user selected Hindi but sentence is clearly English (e.g. "He came 1st in the race"), use English
+        elif lang == 'hi' and self.detector.detect_language(text) == 'en':
+            lang = 'en'
         detected_patterns = self.detector.detect_all_patterns(text)
         if not detected_patterns:
             return text
