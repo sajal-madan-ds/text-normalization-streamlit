@@ -41,8 +41,8 @@ with st.sidebar:
     language_mode = st.radio(
         "Language Mode",
         ["English", "Hindi", "Auto-detect"],
-        index=0,
-        help="Select the target language for conversion"
+        index=2,
+        help="Select the target language for conversion (Auto-detect uses Hinglish cues for Hindi)"
     )
     
     show_patterns = st.checkbox(

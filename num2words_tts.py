@@ -695,7 +695,7 @@ class Num2WordsConverter:
         if n < 20:
             return teens[n - 10]
         t, o = divmod(n, 10)
-        return tens[t] + ('-' + ones[o] if o else '')
+        return tens[t] + (' ' + ones[o] if o else '')
 
     def _year_to_words(self, year: int, lang: str) -> str:
         """Speak 4-digit year naturally: 2022 → 'twenty twenty-two' (not 'two thousand and twenty-two')."""
